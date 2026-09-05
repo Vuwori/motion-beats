@@ -1,0 +1,41 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Motion Beats</title>
+  </head>
+  <body>
+    <main class="app">
+      <section class="hero">
+        <p class="eyebrow">Webcam instrument</p>
+        <h1>Motion Beats</h1>
+        <p>Move your body to trigger drums and shape sound in real time.</p>
+        <button id="startButton">Start camera + audio</button>
+        <p id="status">Ready.</p>
+      </section>
+
+      <section class="stage">
+        <div class="video-wrap">
+          <video id="webcam" autoplay playsinline muted></video>
+          <canvas id="overlay"></canvas>
+        </div>
+
+        <aside class="controls">
+          <h2>Current mappings</h2>
+          <ul>
+            <li><strong>Right hand above shoulder</strong> → kick</li>
+            <li><strong>Left hand above shoulder</strong> → snare</li>
+            <li><strong>Hands far apart</strong> → brighter synth</li>
+            <li><strong>Hands close together</strong> → darker synth</li>
+          </ul>
+          <div class="meter">
+            <span>Hand spread</span>
+            <div class="bar"><div id="spreadFill"></div></div>
+          </div>
+        </aside>
+      </section>
+    </main>
+    <script type="module" src="/src/main.js"></script>
+  </body>
+</html>
