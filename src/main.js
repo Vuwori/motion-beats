@@ -7,6 +7,7 @@ import {
   triggerHiHat,
   triggerRaveStab,
   triggerCrash,
+  triggerMetalHit,
   setHandSpread,
 } from './audio.js';
 
@@ -14,6 +15,23 @@ import {
   createPoseTracker,
   detectPose,
 } from './motion.js';
+
+import {
+  createHandTracker,
+  detectHands,
+} from './hands.js';
+
+import {
+  createBodyGestureDetector,
+} from './bodyGestures.js';
+
+import {
+  createHandGestureDetector,
+} from './handGestures.js';
+
+// ------------------------------------
+// DOM
+// ------------------------------------
 
 const video =
   document.querySelector('#webcam');
@@ -33,40 +51,210 @@ const statusEl =
 const spreadFill =
   document.querySelector('#spreadFill');
 
+// ------------------------------------
+// APP STATE
+// ------------------------------------
+
 let running = false;
 let lastVideoTime = -1;
 
-// ---------------------------
-// GESTURE STATES
-// ---------------------------
+// ------------------------------------
+// POSE SMOOTHING
+// ------------------------------------
 
-let rightWasUp = false;
-let leftWasUp = false;
+let smoothedLandmarks = null;
 
-let bothHandsWereUp = false;
-let handsWereClapped = false;
+const SMOOTHING = 0.55;
+const MIN_VISIBILITY = 0.55;
 
-let baselineHipY = null;
-let jumpInProgress = false;
+function isReliable(point) {
+  if (!point) return false;
 
-let lastKickAt = 0;
-let lastSnareAt = 0;
-let lastClapAt = 0;
-let lastRaveAt = 0;
-let lastJumpAt = 0;
+  const visibility =
+    point.visibility ?? 1;
 
-const cooldownMs = 250;
+  const presence =
+    point.presence ?? 1;
 
-// ---------------------------
-// HELPERS
-// ---------------------------
-
-function distance(a, b) {
-  return Math.hypot(
-    a.x - b.x,
-    a.y - b.y
+  return (
+    visibility >= MIN_VISIBILITY &&
+    presence >= MIN_VISIBILITY
   );
 }
+
+function smoothPoint(
+  previous,
+  current
+) {
+  if (!previous) {
+    return {
+      ...current,
+    };
+  }
+
+  return {
+    ...current,
+
+    x:
+      previous.x * SMOOTHING +
+      current.x *
+        (1 - SMOOTHING),
+
+    y:
+      previous.y * SMOOTHING +
+      current.y *
+        (1 - SMOOTHING),
+
+    z:
+      previous.z * SMOOTHING +
+      current.z *
+        (1 - SMOOTHING),
+  };
+}
+
+function smoothPose(
+  landmarks
+) {
+  if (!smoothedLandmarks) {
+    smoothedLandmarks =
+      landmarks.map(
+        (point) => ({
+          ...point,
+        })
+      );
+
+    return smoothedLandmarks;
+  }
+
+  smoothedLandmarks =
+    landmarks.map(
+      (point, index) =>
+        smoothPoint(
+          smoothedLandmarks[index],
+          point
+        )
+    );
+
+  return smoothedLandmarks;
+}
+
+// ------------------------------------
+// BODY GESTURES
+// ------------------------------------
+
+const bodyGestures =
+  createBodyGestureDetector({
+    isReliable,
+
+    onKick() {
+      triggerKick();
+
+      statusEl.textContent =
+        'KICK 🔊';
+    },
+
+    onSnare() {
+      triggerSnare();
+
+      statusEl.textContent =
+        'SNARE 👏';
+    },
+
+    onClap() {
+      triggerHiHat();
+
+      statusEl.textContent =
+        'HI-HAT ⚡';
+    },
+
+    onRaveStab() {
+      triggerRaveStab();
+
+      statusEl.textContent =
+        'RAVE STAB 🚨';
+    },
+
+    onJump() {
+      triggerCrash();
+
+      statusEl.textContent =
+        'DROP 💥';
+    },
+
+    onHandSpread(value) {
+      setHandSpread(value);
+
+      if (spreadFill) {
+        spreadFill.style.width =
+          `${value * 100}%`;
+      }
+    },
+  });
+
+// ------------------------------------
+// HAND / FINGER GESTURES
+// ------------------------------------
+
+const handGestures =
+  createHandGestureDetector({
+    onRockHorns() {
+      triggerMetalHit();
+
+      statusEl.textContent =
+        'METAL 🤘';
+    },
+
+    onPoint() {
+      triggerHiHat();
+
+      statusEl.textContent =
+        'POINT ⚡';
+    },
+
+    onPeace() {
+      triggerMetalHit();
+
+      statusEl.textContent =
+        'GLITCH ✌️';
+    },
+
+    onFingerGun() {
+      triggerRaveStab();
+
+      statusEl.textContent =
+        'FINGER GUN 👉';
+    },
+
+    onOpenPalm() {
+      statusEl.textContent =
+        'OPEN PALM 🖐';
+    },
+
+    onFist() {
+      statusEl.textContent =
+        'FIST ✊';
+    },
+
+    onPinchStart() {
+      triggerMetalHit();
+
+      statusEl.textContent =
+        'PINCH 🤏';
+    },
+
+    onPinchAmount(value) {
+      // Later we can connect this
+      // continuously to distortion.
+      //
+      // value:
+      // 0 = fingers apart
+      // 1 = fully pinched
+    },
+  });
+
+// ------------------------------------
+// DRAWING HELPERS
+// ------------------------------------
 
 function drawPoint(
   point,
@@ -101,44 +289,52 @@ function drawLine(a, b) {
   ctx.stroke();
 }
 
-// ---------------------------
-// SKELETON
-// ---------------------------
+// ------------------------------------
+// BODY SKELETON
+// ------------------------------------
 
 function renderSkeleton(lm) {
-  ctx.clearRect(
-    0,
-    0,
-    canvas.width,
-    canvas.height
-  );
-
   ctx.lineWidth = 4;
 
   ctx.strokeStyle =
-    'rgba(255,255,255,.75)';
+    'rgba(255,255,255,.65)';
 
   ctx.fillStyle =
     'rgba(255,255,255,.95)';
 
   const pairs = [
     [11, 12],
+
     [11, 13],
     [13, 15],
+
     [12, 14],
     [14, 16],
+
     [11, 23],
     [12, 24],
+
     [23, 24],
+
     [23, 25],
     [25, 27],
+
     [24, 26],
     [26, 28],
   ];
 
   pairs.forEach(
-    ([a, b]) =>
-      drawLine(lm[a], lm[b])
+    ([a, b]) => {
+      if (
+        isReliable(lm[a]) &&
+        isReliable(lm[b])
+      ) {
+        drawLine(
+          lm[a],
+          lm[b]
+        );
+      }
+    }
   );
 
   [
@@ -149,228 +345,98 @@ function renderSkeleton(lm) {
     23,
     24,
   ].forEach(
-    (i) => drawPoint(lm[i])
+    (index) => {
+      if (
+        isReliable(
+          lm[index]
+        )
+      ) {
+        drawPoint(
+          lm[index]
+        );
+      }
+    }
   );
 }
 
-// ---------------------------
-// GESTURE DETECTION
-// ---------------------------
+// ------------------------------------
+// HAND SKELETON
+// ------------------------------------
 
-function handleMappings(
-  lm,
-  now
-) {
-  const leftShoulder = lm[11];
-  const rightShoulder = lm[12];
+const HAND_CONNECTIONS = [
+  // thumb
+  [0, 1],
+  [1, 2],
+  [2, 3],
+  [3, 4],
 
-  const leftWrist = lm[15];
-  const rightWrist = lm[16];
+  // index
+  [0, 5],
+  [5, 6],
+  [6, 7],
+  [7, 8],
 
-  const leftHip = lm[23];
-  const rightHip = lm[24];
+  // middle
+  [5, 9],
+  [9, 10],
+  [10, 11],
+  [11, 12],
 
-  // -----------------------
-  // RIGHT HAND → KICK
-  // -----------------------
+  // ring
+  [9, 13],
+  [13, 14],
+  [14, 15],
+  [15, 16],
 
-  const rightIsUp =
-    rightWrist.y <
-    rightShoulder.y - 0.05;
+  // pinky
+  [13, 17],
+  [17, 18],
+  [18, 19],
+  [19, 20],
 
-  if (
-    rightIsUp &&
-    !rightWasUp &&
-    now - lastKickAt >
-      cooldownMs
-  ) {
-    triggerKick();
+  // palm
+  [0, 17],
+];
 
-    lastKickAt = now;
+function renderHand(hand) {
+  ctx.strokeStyle =
+    'rgba(255,255,255,.85)';
 
-    statusEl.textContent =
-      'KICK 🔊';
-  }
+  ctx.fillStyle =
+    'rgba(255,255,255,1)';
 
-  rightWasUp =
-    rightIsUp;
+  ctx.lineWidth = 2;
 
-  // -----------------------
-  // LEFT HAND → SNARE
-  // -----------------------
-
-  const leftIsUp =
-    leftWrist.y <
-    leftShoulder.y - 0.05;
-
-  if (
-    leftIsUp &&
-    !leftWasUp &&
-    now - lastSnareAt >
-      cooldownMs
-  ) {
-    triggerSnare();
-
-    lastSnareAt = now;
-
-    statusEl.textContent =
-      'SNARE 👏';
-  }
-
-  leftWasUp =
-    leftIsUp;
-
-  // -----------------------
-  // CLAP → HI-HAT
-  // -----------------------
-
-  const shoulderWidth =
-    Math.max(
-      distance(
-        leftShoulder,
-        rightShoulder
-      ),
-      0.001
-    );
-
-  const wristDistance =
-    distance(
-      leftWrist,
-      rightWrist
-    );
-
-  const clapThreshold =
-    shoulderWidth * 0.45;
-
-  const handsAreClapped =
-    wristDistance <
-    clapThreshold;
-
-  if (
-    handsAreClapped &&
-    !handsWereClapped &&
-    now - lastClapAt > 220
-  ) {
-    triggerHiHat();
-
-    lastClapAt = now;
-
-    statusEl.textContent =
-      'HI-HAT ⚡';
-  }
-
-  handsWereClapped =
-    handsAreClapped;
-
-  // -----------------------
-  // BOTH HANDS UP
-  // → RAVE STAB
-  // -----------------------
-
-  const bothHandsUp =
-    leftWrist.y <
-      leftShoulder.y - 0.15 &&
-    rightWrist.y <
-      rightShoulder.y - 0.15;
-
-  if (
-    bothHandsUp &&
-    !bothHandsWereUp &&
-    now - lastRaveAt > 600
-  ) {
-    triggerRaveStab();
-
-    lastRaveAt = now;
-
-    statusEl.textContent =
-      'RAVE STAB 🚨';
-  }
-
-  bothHandsWereUp =
-    bothHandsUp;
-
-  // -----------------------
-  // JUMP → CRASH
-  // -----------------------
-
-  const hipY =
-    (leftHip.y + rightHip.y) / 2;
-
-  // Establish standing position
-  if (baselineHipY === null) {
-    baselineHipY = hipY;
-  }
-
-  // Slowly update baseline while standing
-  if (!jumpInProgress) {
-    baselineHipY =
-      baselineHipY * 0.95 +
-      hipY * 0.05;
-  }
-
-  // Remember:
-  // smaller Y = higher on screen
-  const jumpHeight =
-    baselineHipY - hipY;
-
-  // Adjust this number if needed
-  const jumpThreshold = 0.045;
-
-  if (
-    jumpHeight > jumpThreshold &&
-    !jumpInProgress &&
-    now - lastJumpAt > 800
-  ) {
-    jumpInProgress = true;
-
-    triggerCrash();
-
-    lastJumpAt = now;
-
-    statusEl.textContent =
-      'DROP 💥';
-  }
-
-  // Reset once you land
-  if (
-    jumpInProgress &&
-    jumpHeight < 0.015
-  ) {
-    jumpInProgress = false;
-  }
-
-  // -----------------------
-  // HAND SPREAD
-  // → FILTER
-  // -----------------------
-
-  const handSpread =
-    wristDistance /
-    (
-      shoulderWidth *
-      3.2
-    );
-
-  const normalized =
-    Math.max(
-      0,
-      Math.min(
-        1,
-        handSpread
-      )
-    );
-
-  setHandSpread(
-    normalized
+  HAND_CONNECTIONS.forEach(
+    ([a, b]) => {
+      drawLine(
+        hand[a],
+        hand[b]
+      );
+    }
   );
 
-  spreadFill.style.width =
-    `${normalized * 100}%`;
+  hand.forEach(
+    (point, index) => {
+      const isTip = [
+        4,
+        8,
+        12,
+        16,
+        20,
+      ].includes(index);
+
+      drawPoint(
+        point,
+        isTip ? 5 : 3
+      );
+    }
+  );
 }
 
-// ---------------------------
+// ------------------------------------
 // CAMERA
-// ---------------------------
+// ------------------------------------
 
 async function enableCamera() {
   const stream =
@@ -398,9 +464,9 @@ async function enableCamera() {
   await video.play();
 }
 
-// ---------------------------
-// CANVAS SIZE
-// ---------------------------
+// ------------------------------------
+// CANVAS
+// ------------------------------------
 
 function resizeCanvas() {
   const rect =
@@ -419,9 +485,9 @@ function resizeCanvas() {
     );
 }
 
-// ---------------------------
-// MAIN TRACKING LOOP
-// ---------------------------
+// ------------------------------------
+// MAIN LOOP
+// ------------------------------------
 
 function loop() {
   if (!running) return;
@@ -433,32 +499,96 @@ function loop() {
     lastVideoTime =
       video.currentTime;
 
-    const result =
+    const now =
+      performance.now();
+
+    ctx.clearRect(
+      0,
+      0,
+      canvas.width,
+      canvas.height
+    );
+
+    // --------------------------------
+    // BODY
+    // --------------------------------
+
+    const poseResult =
       detectPose(
         video,
-        performance.now()
+        now
       );
 
-    const lm =
-      result?.landmarks?.[0];
+    const rawPose =
+      poseResult
+        ?.landmarks
+        ?.[0];
 
-    if (lm) {
-      renderSkeleton(lm);
+    if (rawPose) {
+      const pose =
+        smoothPose(
+          rawPose
+        );
 
-      handleMappings(
-        lm,
-        performance.now()
+      renderSkeleton(
+        pose
+      );
+
+      bodyGestures.update(
+        pose,
+        now
       );
     } else {
-      ctx.clearRect(
-        0,
-        0,
-        canvas.width,
-        canvas.height
+      smoothedLandmarks =
+        null;
+
+      bodyGestures.reset();
+    }
+
+    // --------------------------------
+    // HANDS
+    // --------------------------------
+
+    const handResult =
+      detectHands(
+        video,
+        now
       );
 
+    const hands =
+      handResult
+        ?.landmarks ??
+      [];
+
+    const handedness =
+      handResult
+        ?.handedness ??
+      [];
+
+    hands.forEach(
+      (hand) => {
+        renderHand(
+          hand
+        );
+      }
+    );
+
+    handGestures.update(
+      hands,
+      handedness,
+      now
+    );
+
+    // --------------------------------
+    // STATUS
+    // --------------------------------
+
+    if (
+      !rawPose &&
+      hands.length === 0
+    ) {
       statusEl.textContent =
-        'No pose detected — step back so your body is visible.';
+        'No person detected — move into view.';
     }
   }
 
@@ -467,9 +597,9 @@ function loop() {
   );
 }
 
-// ---------------------------
+// ------------------------------------
 // START BUTTON
-// ---------------------------
+// ------------------------------------
 
 startButton.addEventListener(
   'click',
@@ -478,11 +608,12 @@ startButton.addEventListener(
       true;
 
     statusEl.textContent =
-      'Loading rave machine…';
+      'Loading sensors…';
 
     try {
       await Promise.all([
         createPoseTracker(),
+        createHandTracker(),
         startAudio(),
         enableCamera(),
       ]);
@@ -501,10 +632,12 @@ startButton.addEventListener(
 
       loop();
     } catch (error) {
-      console.error(error);
+      console.error(
+        error
+      );
 
       statusEl.textContent =
-        'Could not start. Check camera permissions and console errors.';
+        'Could not start. Check camera permissions and console.';
 
       startButton.disabled =
         false;

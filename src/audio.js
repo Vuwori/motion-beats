@@ -6,22 +6,28 @@ let started = false;
 // MASTER / EFFECTS
 // ---------------------------
 
-const master = new Tone.Gain(0.8).toDestination();
+const master = new Tone.Gain(0.9).toDestination();
+
+// Background music
+const beatBus = new Tone.Gain(0.8).connect(master);
+
+// Sounds caused by your movements
+const gestureBus = new Tone.Gain(1.1).connect(master);
 
 const reverb = new Tone.Reverb({
   decay: 2.5,
   wet: 0.2,
-}).connect(master);
+}).connect(beatBus);
 
 const filter = new Tone.Filter({
   frequency: 800,
   type: 'lowpass',
-}).connect(master);
+}).connect(beatBus);
 
 const distortion = new Tone.Distortion({
   distortion: 0.45,
   wet: 0.35,
-}).connect(master);
+}).connect(beatBus);
 
 const bitCrusher = new Tone.BitCrusher(5).connect(distortion);
 
@@ -41,7 +47,23 @@ const kick = new Tone.MembraneSynth({
     sustain: 0,
     release: 0.1,
   },
-}).connect(master);
+}).connect(beatBus);
+
+const gestureKick = new Tone.MembraneSynth({
+  pitchDecay: 0.04,
+  octaves: 8,
+  oscillator: {
+    type: 'sine',
+  },
+  envelope: {
+    attack: 0.001,
+    decay: 0.25,
+    sustain: 0,
+    release: 0.08,
+  },
+}).connect(gestureBus);
+
+gestureKick.volume.value = 3;
 
 // ---------------------------
 // SNARE / CLAP
@@ -73,9 +95,9 @@ const hiHat = new Tone.MetalSynth({
   modulationIndex: 50,
   resonance: 5000,
   octaves: 2,
-}).connect(master);
+}).connect(beatBus);
 
-hiHat.volume.value = -10;
+hiHat.volume.value = -7;
 
 // ---------------------------
 // METALLIC PERCUSSION
@@ -95,6 +117,21 @@ const metalHit = new Tone.MetalSynth({
 }).connect(bitCrusher);
 
 metalHit.volume.value = -7;
+
+const gestureMetalHit = new Tone.MetalSynth({
+  frequency: 140,
+  envelope: {
+    attack: 0.001,
+    decay: 0.22,
+    release: 0.1,
+  },
+  harmonicity: 14,
+  modulationIndex: 80,
+  resonance: 8000,
+  octaves: 2,
+}).connect(gestureBus);
+
+gestureMetalHit.volume.value = 2;
 
 // ---------------------------
 // RAVE STAB
@@ -117,6 +154,8 @@ const raveSynth = new Tone.PolySynth(Tone.Synth, {
 // ---------------------------
 
 const bass = new Tone.MonoSynth({
+  
+
   oscillator: {
     type: 'square',
   },
@@ -252,7 +291,10 @@ export async function startAudio() {
 export function triggerKick() {
   if (!started) return;
 
-  kick.triggerAttackRelease('C1', '8n');
+  gestureKick.triggerAttackRelease(
+    'C1',
+    '8n'
+  );
 }
 
 export function triggerSnare() {
@@ -290,8 +332,8 @@ export function triggerCrash() {
 export function triggerMetalHit() {
   if (!started) return;
 
-  metalHit.triggerAttackRelease(
-    '32n'
+  gestureMetalHit.triggerAttackRelease(
+    '16n'
   );
 }
 
@@ -307,8 +349,8 @@ export function setHandSpread(value01) {
     Math.min(1, value01)
   );
 
-  const minFrequency = 200;
-  const maxFrequency = 7000;
+  const minFrequency = 500;
+  const maxFrequency = 8000;
 
   const frequency =
     minFrequency +
