@@ -46,7 +46,8 @@ let leftWasUp = false;
 let bothHandsWereUp = false;
 let handsWereClapped = false;
 
-let previousHipY = null;
+let baselineHipY = null;
+let jumpInProgress = false;
 
 let lastKickAt = 0;
 let lastSnareAt = 0;
@@ -293,35 +294,50 @@ function handleMappings(
   // -----------------------
 
   const hipY =
-    (
-      leftHip.y +
-      rightHip.y
-    ) / 2;
+    (leftHip.y + rightHip.y) / 2;
 
-  if (
-    previousHipY !== null
-  ) {
-    const verticalMovement =
-      previousHipY -
-      hipY;
-
-    if (
-      verticalMovement >
-        0.035 &&
-      now - lastJumpAt >
-        900
-    ) {
-      triggerCrash();
-
-      lastJumpAt = now;
-
-      statusEl.textContent =
-        'DROP 💥';
-    }
+  // Establish standing position
+  if (baselineHipY === null) {
+    baselineHipY = hipY;
   }
 
-  previousHipY =
-    hipY;
+  // Slowly update baseline while standing
+  if (!jumpInProgress) {
+    baselineHipY =
+      baselineHipY * 0.95 +
+      hipY * 0.05;
+  }
+
+  // Remember:
+  // smaller Y = higher on screen
+  const jumpHeight =
+    baselineHipY - hipY;
+
+  // Adjust this number if needed
+  const jumpThreshold = 0.045;
+
+  if (
+    jumpHeight > jumpThreshold &&
+    !jumpInProgress &&
+    now - lastJumpAt > 800
+  ) {
+    jumpInProgress = true;
+
+    triggerCrash();
+
+    lastJumpAt = now;
+
+    statusEl.textContent =
+      'DROP 💥';
+  }
+
+  // Reset once you land
+  if (
+    jumpInProgress &&
+    jumpHeight < 0.015
+  ) {
+    jumpInProgress = false;
+  }
 
   // -----------------------
   // HAND SPREAD

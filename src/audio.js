@@ -18,6 +18,13 @@ const filter = new Tone.Filter({
   type: 'lowpass',
 }).connect(master);
 
+const distortion = new Tone.Distortion({
+  distortion: 0.45,
+  wet: 0.35,
+}).connect(master);
+
+const bitCrusher = new Tone.BitCrusher(5).connect(distortion);
+
 // ---------------------------
 // KICK
 // ---------------------------
@@ -56,19 +63,38 @@ const snare = new Tone.NoiseSynth({
 // ---------------------------
 
 const hiHat = new Tone.MetalSynth({
-  frequency: 250,
+  frequency: 320,
   envelope: {
     attack: 0.001,
-    decay: 0.06,
-    release: 0.01,
+    decay: 0.08,
+    release: 0.02,
   },
-  harmonicity: 5.1,
-  modulationIndex: 32,
-  resonance: 3000,
-  octaves: 1.5,
+  harmonicity: 7.5,
+  modulationIndex: 50,
+  resonance: 5000,
+  octaves: 2,
 }).connect(master);
 
-hiHat.volume.value = -12;
+hiHat.volume.value = -10;
+
+// ---------------------------
+// METALLIC PERCUSSION
+// ---------------------------
+
+const metalHit = new Tone.MetalSynth({
+  frequency: 110,
+  envelope: {
+    attack: 0.001,
+    decay: 0.18,
+    release: 0.08,
+  },
+  harmonicity: 12,
+  modulationIndex: 64,
+  resonance: 7000,
+  octaves: 1.5,
+}).connect(bitCrusher);
+
+metalHit.volume.value = -7;
 
 // ---------------------------
 // RAVE STAB
@@ -129,24 +155,77 @@ const crash = new Tone.NoiseSynth({
 crash.volume.value = -6;
 
 // ---------------------------
-// EDM LOOP
+// METALLIC RAVE SEQUENCER
 // ---------------------------
 
-const kickLoop = new Tone.Loop((time) => {
-  kick.triggerAttackRelease('C1', '8n', time);
-}, '4n');
+const kickPattern = [
+  1, 0, 0, 0,
+  1, 0, 0, 0,
+  1, 0, 0, 0,
+  1, 0, 0, 0,
+];
 
-const hatLoop = new Tone.Loop((time) => {
-  hiHat.triggerAttackRelease('16n', time);
-}, '8n');
+const clapPattern = [
+  0, 0, 0, 0,
+  1, 0, 0, 0,
+  0, 0, 0, 0,
+  1, 0, 0, 0,
+];
 
-const bassPattern = new Tone.Sequence(
-  (time, note) => {
-    bass.triggerAttackRelease(note, '8n', time);
-  },
-  ['C2', 'C2', 'Eb2', 'C2', 'G1', 'G1', 'Bb1', 'G1'],
-  '8n'
-);
+const hatPattern = [
+  1, 0, 1, 1,
+  1, 0, 1, 0,
+  1, 1, 1, 0,
+  1, 0, 1, 1,
+];
+
+const metalPattern = [
+  0, 0, 0, 1,
+  0, 0, 1, 0,
+  0, 1, 0, 0,
+  0, 0, 1, 1,
+];
+
+const bassNotes = [
+  'C2', null, 'C2', null,
+  'Eb2', null, 'C2', null,
+  'C2', null, 'G1', null,
+  'Bb1', null, 'C2', null,
+];
+
+let currentStep = 0;
+
+const sequencer = new Tone.Loop((time) => {
+  if (kickPattern[currentStep]) {
+    kick.triggerAttackRelease('C1', '8n', time);
+  }
+
+  if (clapPattern[currentStep]) {
+    snare.triggerAttackRelease('16n', time);
+  }
+
+  if (hatPattern[currentStep]) {
+    hiHat.triggerAttackRelease('32n', time);
+  }
+
+  if (metalPattern[currentStep]) {
+    metalHit.triggerAttackRelease('32n', time);
+  }
+
+  const note = bassNotes[currentStep];
+
+  if (note) {
+    bass.triggerAttackRelease(
+      note,
+      '16n',
+      time
+    );
+  }
+
+  currentStep =
+    (currentStep + 1) % 16;
+
+}, '16n');
 
 // ---------------------------
 // START AUDIO
@@ -157,11 +236,9 @@ export async function startAudio() {
 
   await Tone.start();
 
-  Tone.Transport.bpm.value = 138;
+  Tone.Transport.bpm.value = 150;
 
-  kickLoop.start(0);
-  hatLoop.start('8n');
-  bassPattern.start(0);
+  sequencer.start(0);
 
   Tone.Transport.start();
 
@@ -204,7 +281,18 @@ export function triggerCrash() {
 
   crash.triggerAttackRelease('1n');
 
-  bass.triggerAttackRelease('C1', '2n');
+  bass.triggerAttackRelease(
+    'C1',
+    '2n'
+  );
+}
+
+export function triggerMetalHit() {
+  if (!started) return;
+
+  metalHit.triggerAttackRelease(
+    '32n'
+  );
 }
 
 // ---------------------------
@@ -224,7 +312,8 @@ export function setHandSpread(value01) {
 
   const frequency =
     minFrequency +
-    clamped * (maxFrequency - minFrequency);
+    clamped *
+    (maxFrequency - minFrequency);
 
   filter.frequency.rampTo(
     frequency,
