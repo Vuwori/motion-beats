@@ -32,38 +32,54 @@ const distortion = new Tone.Distortion({
 const bitCrusher = new Tone.BitCrusher(5).connect(distortion);
 
 // ---------------------------
-// KICK
+// HEAVY TECHNO KICK
 // ---------------------------
 
-const kick = new Tone.MembraneSynth({
-  pitchDecay: 0.05,
-  octaves: 8,
-  oscillator: {
-    type: 'sine',
-  },
-  envelope: {
-    attack: 0.001,
-    decay: 0.3,
-    sustain: 0,
-    release: 0.1,
-  },
+const kickDrive = new Tone.Distortion({
+  distortion: 0.28,
+  wet: 0.3,
 }).connect(beatBus);
 
-const gestureKick = new Tone.MembraneSynth({
-  pitchDecay: 0.04,
-  octaves: 8,
+const kick = new Tone.MembraneSynth({
+  pitchDecay: 0.025,
+  octaves: 10,
+
   oscillator: {
     type: 'sine',
   },
+
   envelope: {
     attack: 0.001,
-    decay: 0.25,
+    decay: 0.48,
     sustain: 0,
-    release: 0.08,
+    release: 0.12,
+  },
+}).connect(kickDrive);
+
+kick.volume.value = 3;
+
+
+// ---------------------------
+// GESTURE KICK
+// ---------------------------
+
+const gestureKick = new Tone.MembraneSynth({
+  pitchDecay: 0.018,
+  octaves: 12,
+
+  oscillator: {
+    type: 'sine',
+  },
+
+  envelope: {
+    attack: 0.001,
+    decay: 0.55,
+    sustain: 0,
+    release: 0.15,
   },
 }).connect(gestureBus);
 
-gestureKick.volume.value = 3;
+gestureKick.volume.value = 4;
 
 // ---------------------------
 // SNARE / CLAP
@@ -134,20 +150,34 @@ const gestureMetalHit = new Tone.MetalSynth({
 gestureMetalHit.volume.value = 2;
 
 // ---------------------------
-// RAVE STAB
+// WAREHOUSE RAVE STAB
 // ---------------------------
+
+const raveDistortion = new Tone.Distortion({
+  distortion: 0.5,
+  wet: 0.4,
+}).connect(gestureBus);
+
+const raveFilter = new Tone.Filter({
+  frequency: 2800,
+  type: 'lowpass',
+  Q: 4,
+}).connect(raveDistortion);
 
 const raveSynth = new Tone.PolySynth(Tone.Synth, {
   oscillator: {
     type: 'sawtooth',
   },
+
   envelope: {
-    attack: 0.005,
-    decay: 0.15,
-    sustain: 0.05,
-    release: 0.2,
+    attack: 0.002,
+    decay: 0.12,
+    sustain: 0,
+    release: 0.14,
   },
-}).connect(filter);
+}).connect(raveFilter);
+
+raveSynth.volume.value = -2;
 
 // ---------------------------
 // BASS SYNTH
@@ -236,7 +266,7 @@ let currentStep = 0;
 
 const sequencer = new Tone.Loop((time) => {
   if (kickPattern[currentStep]) {
-    kick.triggerAttackRelease('C1', '8n', time);
+    kick.triggerAttackRelease('C1', '4n', time);
   }
 
   if (clapPattern[currentStep]) {
@@ -336,6 +366,45 @@ export function triggerMetalHit() {
     '16n'
   );
 }
+
+export function triggerZap() {
+  if (!started) return;
+
+  electricZap.triggerAttackRelease(
+    'C6',
+    '32n'
+  );
+}
+
+// ---------------------------
+// ELECTRICAL ZAP
+// ---------------------------
+
+const zapDelay = new Tone.FeedbackDelay({
+  delayTime: '32n',
+  feedback: 0.22,
+  wet: 0.25,
+}).connect(gestureBus);
+
+const zapDistortion = new Tone.Distortion({
+  distortion: 0.75,
+  wet: 0.65,
+}).connect(zapDelay);
+
+const electricZap = new Tone.Synth({
+  oscillator: {
+    type: 'sawtooth',
+  },
+
+  envelope: {
+    attack: 0.001,
+    decay: 0.08,
+    sustain: 0,
+    release: 0.05,
+  },
+}).connect(zapDistortion);
+
+electricZap.volume.value = -3;
 
 // ---------------------------
 // HAND-SPREAD FILTER

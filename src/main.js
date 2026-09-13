@@ -1,5 +1,6 @@
 import './style.css';
 
+
 import {
   startAudio,
   triggerKick,
@@ -9,6 +10,7 @@ import {
   triggerCrash,
   triggerMetalHit,
   setHandSpread,
+  triggerZap,
 } from './audio.js';
 
 import {
@@ -205,10 +207,10 @@ const handGestures =
     },
 
     onPoint() {
-      triggerHiHat();
+      triggerZap();
 
       statusEl.textContent =
-        'POINT ⚡';
+        'ZAP ⚡';
     },
 
     onPeace() {
